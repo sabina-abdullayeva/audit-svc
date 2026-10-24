@@ -41,14 +41,22 @@
         name: "{{ audit_volume }}"
         state: present
 
+    - name: Create PostgreSQL environment file
+      ansible.builtin.template:
+        src: templates/postgres.env.j2
+        dest: "{{ audit_root }}/postgres.env"
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+
     - name: Start PostgreSQL
       community.docker.docker_container:
         name: postgres
         image: "{{ postgres_image }}"
         state: started
         restart_policy: unless-stopped
-        env:
-          POSTGRES_PASSWORD: "{{ vault_postgres_password }}"
+        env_file: "{{ audit_root }}/postgres.env"
         volumes:
           - "{{ audit_volume }}:/var/lib/postgresql/data"
         networks:
@@ -56,7 +64,6 @@
             aliases:
               - postgres
         purge_networks: true
-      no_log: true
 
     - name: Read PostgreSQL container information
       community.docker.docker_container_info:
@@ -220,3 +227,4 @@
         name: nginx
         state: started
         restart: true
+
