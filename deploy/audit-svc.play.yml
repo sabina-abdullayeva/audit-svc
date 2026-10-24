@@ -63,7 +63,6 @@
           - name: "{{ audit_network }}"
             aliases:
               - postgres
-        purge_networks: true
 
     - name: Read PostgreSQL container information
       community.docker.docker_container_info:
@@ -128,7 +127,6 @@
           - "{{ audit_root }}/config:/etc/audit-svc:ro"
         networks:
           - name: "{{ audit_network }}"
-        purge_networks: true
       changed_when: false
 
     - name: Start audit-svc
@@ -149,7 +147,6 @@
           - name: "{{ audit_network }}"
             aliases:
               - audit-svc
-        purge_networks: true
 
     - name: Create Nginx config
       ansible.builtin.template:
@@ -174,7 +171,6 @@
           - name: "{{ audit_network }}"
             aliases:
               - nginx
-        purge_networks: true
 
     - name: Start nginx-exporter
       community.docker.docker_container:
@@ -188,7 +184,6 @@
           - "127.0.0.1:{{ nginx_exporter_port }}:9113"
         networks:
           - name: "{{ audit_network }}"
-        purge_networks: true
 
     - name: Apply handlers before health check
       ansible.builtin.meta: flush_handlers
