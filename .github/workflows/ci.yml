@@ -115,7 +115,10 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
+      - name: Install Ansible
+        run: | 
+          python3 -m pip install --user "ansible-core>=2.15,<2.18"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Install Ansible collections
         run: ansible-galaxy collection install -r deploy/requirements.yml
 
