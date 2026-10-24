@@ -1,0 +1,48 @@
+events {}
+
+http {
+    # Встроенный DNS Docker. Он нужен после пересоздания audit-svc.
+    resolver 127.0.0.11 valid=10s ipv6=off;
+
+    server {
+        listen 8080;
+
+        # Внешний пользователь не должен вызывать reload.
+        location = /reload {
+            return 404;
+        }
+
+        location /api/ {
+            set $audit_upstream http://audit-svc:8080;
+            proxy_pass $audit_upstream;
+            proxy_set_header Host $host;
+        }
+
+        location = /healthz {
+            set $audit_upstream http://audit-svc:8080;
+            proxy_pass $audit_upstream;
+        }
+
+        location = /metrics {
+            set $audit_upstream http://audit-svc:8080;
+            proxy_pass $audit_upstream;
+        }
+
+        location / {
+            return 404;
+        }
+    }
+
+    # Этот порт доступен только внутри docker-сети.
+    server {
+        listen 8081;
+
+        location = /stub_status {
+            stub_status;
+        }
+
+        location / {
+            return 404;
+        }
+    }
+}

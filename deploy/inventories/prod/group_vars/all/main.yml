@@ -1,0 +1,15 @@
+---
+audit_root: /opt/audit-svc
+audit_network: audit
+audit_volume: audit-postgres-data
+audit_image: ghcr.io/sabina-abdullayeva/audit-svc:v0.0.0
+
+postgres_image: postgres:17-bookworm
+nginx_image: nginx:1.28-alpine
+nginx_exporter_image: nginx/nginx-prometheus-exporter:1.4
+
+postgres_database: audit
+postgres_user: audit_svc
+
+nginx_public_port: 8088
+nginx_exporter_port: 9113

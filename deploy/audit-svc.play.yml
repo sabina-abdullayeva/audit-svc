@@ -1,0 +1,222 @@
+---
+- name: Deploy audit service
+  hosts: all
+  become: true
+
+  tasks:
+    - name: Install Python modules for Ansible
+      ansible.builtin.apt:
+        name:
+          - python3-docker
+          - python3-psycopg2
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Create project directories
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: root
+        group: "{{ item.group }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - path: "{{ audit_root }}"
+          group: root
+          mode: "0755"
+        - path: "{{ audit_root }}/config"
+          group: "10001"
+          mode: "0750"
+        - path: "{{ audit_root }}/nginx"
+          group: root
+          mode: "0755"
+
+    - name: Create application network
+      community.docker.docker_network:
+        name: "{{ audit_network }}"
+        state: present
+
+    - name: Create PostgreSQL volume
+      community.docker.docker_volume:
+        name: "{{ audit_volume }}"
+        state: present
+
+    - name: Start PostgreSQL
+      community.docker.docker_container:
+        name: postgres
+        image: "{{ postgres_image }}"
+        state: started
+        restart_policy: unless-stopped
+        env:
+          POSTGRES_PASSWORD: "{{ vault_postgres_password }}"
+        volumes:
+          - "{{ audit_volume }}:/var/lib/postgresql/data"
+        networks:
+          - name: "{{ audit_network }}"
+            aliases:
+              - postgres
+        purge_networks: true
+      no_log: true
+
+    - name: Read PostgreSQL container information
+      community.docker.docker_container_info:
+        name: postgres
+      register: postgres_info
+
+    - name: Remember PostgreSQL address
+      ansible.builtin.set_fact:
+        postgres_address: >-
+          {{ postgres_info.container.NetworkSettings.Networks[audit_network].IPAddress }}
+
+    - name: Wait until PostgreSQL accepts connections
+      ansible.builtin.wait_for:
+        host: "{{ postgres_address }}"
+        port: 5432
+        delay: 2
+        timeout: 60
+
+    - name: Create application database user
+      community.postgresql.postgresql_user:
+        login_host: "{{ postgres_address }}"
+        login_user: postgres
+        login_password: "{{ vault_postgres_password }}"
+        name: "{{ postgres_user }}"
+        password: "{{ vault_audit_password }}"
+        state: present
+      no_log: true
+
+    - name: Create application database
+      community.postgresql.postgresql_db:
+        login_host: "{{ postgres_address }}"
+        login_user: postgres
+        login_password: "{{ vault_postgres_password }}"
+        name: "{{ postgres_database }}"
+        owner: "{{ postgres_user }}"
+        state: present
+      no_log: true
+
+    # Монтируем каталог, а не один файл. Тогда atomic rename модуля template
+    # будет виден внутри уже работающего контейнера.
+    - name: Create audit-svc config
+      ansible.builtin.template:
+        src: templates/config.yaml.j2
+        dest: "{{ audit_root }}/config/config.yaml"
+        owner: root
+        group: "10001"
+        mode: "0640"
+      no_log: true
+      notify: Reload audit config
+
+    - name: Run database migrations
+      community.docker.docker_container:
+        name: audit-migrate
+        image: "{{ audit_image }}"
+        state: started
+        detach: false
+        cleanup: true
+        output_logs: true
+        entrypoint:
+          - migrate
+        volumes:
+          - "{{ audit_root }}/config:/etc/audit-svc:ro"
+        networks:
+          - name: "{{ audit_network }}"
+        purge_networks: true
+      changed_when: false
+
+    - name: Start audit-svc
+      community.docker.docker_container:
+        name: audit-svc
+        image: "{{ audit_image }}"
+        # Новый release tag может указывать на тот же digest. В этом случае
+        # контейнер не нужно перезапускать только из-за другого имени тега.
+        image_name_mismatch: ignore
+        state: started
+        restart_policy: unless-stopped
+        read_only: true
+        tmpfs:
+          - /tmp
+        volumes:
+          - "{{ audit_root }}/config:/etc/audit-svc:ro"
+        networks:
+          - name: "{{ audit_network }}"
+            aliases:
+              - audit-svc
+        purge_networks: true
+
+    - name: Create Nginx config
+      ansible.builtin.template:
+        src: templates/nginx.conf.j2
+        dest: "{{ audit_root }}/nginx/nginx.conf"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart Nginx
+
+    - name: Start Nginx
+      community.docker.docker_container:
+        name: nginx
+        image: "{{ nginx_image }}"
+        state: started
+        restart_policy: unless-stopped
+        published_ports:
+          - "127.0.0.1:{{ nginx_public_port }}:8080"
+        volumes:
+          - "{{ audit_root }}/nginx/nginx.conf:/etc/nginx/nginx.conf:ro"
+        networks:
+          - name: "{{ audit_network }}"
+            aliases:
+              - nginx
+        purge_networks: true
+
+    - name: Start nginx-exporter
+      community.docker.docker_container:
+        name: nginx-exporter
+        image: "{{ nginx_exporter_image }}"
+        state: started
+        restart_policy: unless-stopped
+        command:
+          - "--nginx.scrape-uri=http://nginx:8081/stub_status"
+        published_ports:
+          - "127.0.0.1:{{ nginx_exporter_port }}:9113"
+        networks:
+          - name: "{{ audit_network }}"
+        purge_networks: true
+
+    - name: Apply handlers before health check
+      ansible.builtin.meta: flush_handlers
+
+    - name: Check service through Nginx
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ nginx_public_port }}/healthz"
+        status_code: 200
+      register: health_check
+      retries: 10
+      delay: 2
+      until: health_check.status == 200
+      changed_when: false
+
+  handlers:
+    - name: Reload audit config
+      community.docker.docker_container_exec:
+        container: audit-svc
+        argv:
+          - python
+          - -c
+          - >-
+            import urllib.request;
+            response = urllib.request.urlopen(
+              urllib.request.Request(
+                "http://127.0.0.1:8080/reload",
+                data=b"",
+                method="POST"
+              ),
+              timeout=10
+            );
+            assert response.status == 200
+
+    - name: Restart Nginx
+      community.docker.docker_container:
+        name: nginx
+        state: started
+        restart: true

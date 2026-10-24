@@ -1,0 +1,7 @@
+---
+all:
+  hosts:
+    deploy:
+      # Self-hosted runner и целевая машина — одна Ubuntu VM.
+      ansible_connection: local
+      ansible_python_interpreter: /usr/bin/python3
