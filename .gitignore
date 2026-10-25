@@ -19,3 +19,6 @@ server.tar.gz
 
 # Локальные переменные окружения
 .env
+
+#Other
+.DS_Store
