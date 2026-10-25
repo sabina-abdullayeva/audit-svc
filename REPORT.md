@@ -2,6 +2,15 @@
 
 ## 1. Pipeline main
 
+Pipeline ветки `main`: тесты и сборка прошли успешно, deploy для ветки не
+запускается:
+
+![Pipeline ветки main](screenshots/Screenshot%202026-10-25%20at%2004.01.44.png)
+
+Образ публикуется с тегом `main_<sha>` для платформы `linux/arm64`:
+
+![Публикация main образа](screenshots/Screenshot%202026-10-25%20at%2004.03.28.png)
+
 Образ опубликован в GitHub Packages:
 
 ![Образ audit-svc в GHCR](screenshots/Screenshot%202026-10-25%20at%2002.53.18.png)
@@ -15,9 +24,12 @@ git push origin v0.1.0
 
 ![Pipeline тега](screenshots/Screenshot%202026-10-25%20at%2002.56.09.png)
 
-Первый деплой:
+Деплой из pipeline тега:
 
-![Лог первого deploy](screenshots/Screenshot%202026-10-25%20at%2002.52.09.png)
+![Лог deploy](screenshots/Screenshot%202026-10-25%20at%2002.52.09.png)
+
+Полный успешный лог деплой с `PLAY RECAP`:
+[logs/password-rotation.txt](logs/password-rotation.txt).
 
 ### Проверка идемпотентности
 
@@ -48,9 +60,37 @@ PLAY RECAP
 deploy : ok=19 changed=0 unreachable=0 failed=0 skipped=0 rescued=0 ignored=0
 ```
 
-![Повторный deploy без изменений](screenshots/Screenshot%202026-10-25%20at%2002.59.16.png)
+Полный лог: [logs/deploy-idempotency.txt](logs/deploy-idempotency.txt).
+
+![Повторный  деплой без изменений](screenshots/Screenshot%202026-10-25%20at%2002.59.16.png)
 
 ## 3. Смена пароля без перезапуска
+
+Pipeline тега `v0.1.6`, в котором менялся пароль:
+
+![Pipeline смены пароля](screenshots/Screenshot%202026-10-25%20at%2003.53.15.png)
+
+Во время deploy изменились пароль пользователя и конфиг. После этого
+сработал handler перечитывания:
+
+```text
+TASK [Create application database user]
+changed: [deploy]
+
+TASK [Create audit-svc config]
+changed: [deploy]
+
+TASK [Start audit-svc]
+ok: [deploy]
+
+RUNNING HANDLER [Reload audit config]
+changed: [deploy]
+
+PLAY RECAP
+deploy : ok=20 changed=3 unreachable=0 failed=0
+```
+
+Полный лог: [logs/password-rotation.txt](logs/password-rotation.txt).
 
 ```bash
 docker inspect -f '{{.State.StartedAt}}' audit-svc
@@ -68,6 +108,8 @@ curl -s http://127.0.0.1:8088/metrics | grep audit_config_reloads_total
 Результат:
 
 ```text
+Before: 2026-10-25T00:04:02.999441832Z
+After:  2026-10-25T00:04:02.999441832Z
 StartedAt unchanged
 2026-10-24 23:42:41,137 [INFO] audit_svc.main: config reloaded, database settings are unchanged
 2026-10-25 00:14:35,822 [INFO] audit_svc.main: config reloaded, reconnected to the database
@@ -97,6 +139,21 @@ healthz: 200
 nginx_up 1
 ```
 
+Количество записей о reload до и после проверочных запросов:
+
+```text
+before: 2
+after: 2
+```
+
+Порты контейнеров:
+
+```text
+nginx-exporter  127.0.0.1:9113->9113/tcp
+nginx           80/tcp, 127.0.0.1:8088->8080/tcp
+audit-svc       8080/tcp
+postgres        5432/tcp
+```
 ## 5. Мониторинг
 
 ```bash
