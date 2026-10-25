@@ -1,0 +1,75 @@
+
+Search logs
+3s
+1s
+1s
+1s
+0s
+8s
+Run chmod 700 deploy/vault-pass.sh
+
+PLAY [Deploy audit service] ****************************************************
+
+TASK [Gathering Facts] *********************************************************
+ok: [deploy]
+
+TASK [Install Python modules for Ansible] **************************************
+ok: [deploy]
+
+TASK [Create project directories] **********************************************
+ok: [deploy] => (item={'path': '/opt/audit-svc', 'group': 'root', 'mode': '0755'})
+ok: [deploy] => (item={'path': '/opt/audit-svc/config', 'group': '10001', 'mode': '0750'})
+ok: [deploy] => (item={'path': '/opt/audit-svc/nginx', 'group': 'root', 'mode': '0755'})
+
+TASK [Create application network] **********************************************
+ok: [deploy]
+
+TASK [Create PostgreSQL volume] ************************************************
+ok: [deploy]
+
+TASK [Create PostgreSQL environment file] **************************************
+ok: [deploy]
+
+TASK [Start PostgreSQL] ********************************************************
+ok: [deploy]
+
+TASK [Read PostgreSQL container information] ***********************************
+ok: [deploy]
+
+TASK [Remember PostgreSQL address] *********************************************
+ok: [deploy]
+
+TASK [Wait until PostgreSQL accepts connections] *******************************
+ok: [deploy]
+
+TASK [Create application database user] ****************************************
+ok: [deploy]
+
+TASK [Create application database] *********************************************
+ok: [deploy]
+
+TASK [Create audit-svc config] *************************************************
+ok: [deploy]
+
+TASK [Run database migrations] *************************************************
+ok: [deploy]
+
+TASK [Start audit-svc] *********************************************************
+ok: [deploy]
+
+TASK [Create Nginx config] *****************************************************
+ok: [deploy]
+
+TASK [Start Nginx] *************************************************************
+ok: [deploy]
+
+TASK [Start nginx-exporter] ****************************************************
+ok: [deploy]
+
+TASK [Apply handlers before health check] **************************************
+
+TASK [Check service through Nginx] *********************************************
+ok: [deploy]
+
+PLAY RECAP *********************************************************************
+deploy                     : ok=19   changed=0    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0  
